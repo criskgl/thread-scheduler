@@ -15,6 +15,7 @@ TCB* scheduler();
 void activator();
 void timer_interrupt(int sig);
 void disk_interrupt(int sig);
+struct queue *free_queue;
 
 
 /* Array of state thread control blocks: the process allows a maximum of N threads */
@@ -50,6 +51,7 @@ void function_thread(int sec)
 void init_mythreadlib() 
 {
   int i;
+  free_queue = queue_new();
 
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1)
@@ -135,6 +137,11 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr,2,seconds);
 
+  //Enqueue thread in Free
+  disable_interrupt();
+  enqueue(free_queue, &t_state[i]);
+  enable_interrupt();
+
   return i;
 } 
 /****** End my_thread_create() ******/
@@ -199,28 +206,29 @@ int mythread_gettid(){
 }
 
 
-/* SJF para alta prioridad, RR para baja*/
-
+/* Round Robin */
 TCB* scheduler()
 {
-  int i;
-  for(i=0; i<N; i++)
-  {
-    if (t_state[i].state == INIT) 
-    {
-      current = i;
-	    return &t_state[i];
-    }
+  disable_interrupt();
+  TCB* next = dequeue(free_queue);
+  enable_interrupt();
+  if(next == NULL){
+    printf("mythread_free: No thread in the system\nExiting...\n");	
+    exit(1);
   }
-  printf("mythread_free: No thread in the system\nExiting...\n");	
-  exit(1);
+  return next;
 }
 
 
 /* Timer interrupt */
 void timer_interrupt(int sig)
 {
-    printf("TICK\n");	
+  if(running->ticks == 0){
+    running->ticks = QUANTUM_TICKS;
+    mythread_timeout(running->tid);
+  }else{
+    running->ticks--;
+  }
 } 
 
 /* Activator */

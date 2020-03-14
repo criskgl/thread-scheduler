@@ -94,7 +94,6 @@ void init_mythreadlib()
 
   t_state[0].tid = 0;
   running = &t_state[0];
-
   /* Initialize disk and clock interrupts */
   init_disk_interrupt();
   init_interrupt();
@@ -108,7 +107,7 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   
   if (!init) { init_mythreadlib(); init=1;}
 
-  for (i=0; i<N; i++)
+  for (i=0; i<N; i++)//search for next free thread
     if (t_state[i].state == FREE) break;
 
   if (i == N) return(-1);
@@ -122,6 +121,7 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   t_state[i].state = INIT;
   t_state[i].priority = priority;
   t_state[i].function = fun_addr;
+  t_state[i].ticks = QUANTUM_TICKS;
   t_state[i].execution_total_ticks = seconds_to_ticks(seconds);
   t_state[i].remaining_ticks = t_state[i].execution_total_ticks;
   t_state[i].run_env.uc_stack.ss_sp = (void *)(malloc(STACKSIZE));
@@ -141,6 +141,10 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   disable_interrupt();
   enqueue(init_queue, &t_state[i]);
   enable_interrupt();
+  
+  
+
+  printf("thread %i has been inserted to queue\n", i);
 
   return i;
 } 
@@ -164,17 +168,18 @@ void disk_interrupt(int sig)
 void mythread_exit() {
 
   printf("*** THREAD %d FINISHED\n", mythread_gettid());	
-  running->state = FREE;
+  if(running->state != IDLE){
+    running->state = FREE;
+  }
   free(running->run_env.uc_stack.ss_sp); 
-
   TCB* next = scheduler();
-  activator(running, next);
+  activator(next);
 }
 
 
 void mythread_timeout() {
-
     printf("*** THREAD %d EJECTED\n", mythread_gettid());
+
     // Update TCB with new state and ticks
     running->ticks = QUANTUM_TICKS;
     running->state = INIT;
@@ -183,9 +188,9 @@ void mythread_timeout() {
     enqueue(init_queue, running);
     enable_interrupt();
     free(running->run_env.uc_stack.ss_sp);
-
+    
     TCB* next = scheduler();
-    activator(running, next);
+    activator(next);
 }
 
 
@@ -233,19 +238,30 @@ TCB* scheduler()
 void timer_interrupt(int sig)
 {
   running->ticks--;
+  //printf("remaining ticks: %i\n", running->ticks);
+  //printf("running state: %i\nrunning tid: %i\n", running->state, running->tid);
   if(running->ticks == 0){
-    mythread_timeout();
+    running->state = INIT;
+    running->ticks = QUANTUM_TICKS;
+    disable_interrupt();
+    enqueue(init_queue, running);
+    enable_interrupt();
+    TCB* old_running = running;
+    TCB* next = scheduler();
+    activator(next);
   }
 } 
 
 /* Activator */
-void activator(TCB* prev, TCB* next)
+void activator(TCB* next)
 {
+  TCB* prev = running;
+  current = next->tid;
   running = next;
-  if(prev->state == FREE){
+  if(prev->state == FREE){//activator was called because prev thread had finished executing
     printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
-    setcontext (&(next->run_env));
-  }else{
+    setcontext (&(next->run_env));    
+  }else{//activator was called because prev thread runned out of time
     printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
     swapcontext(&(prev->run_env),&(next->run_env));
   }

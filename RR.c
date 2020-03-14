@@ -41,7 +41,7 @@ void function_thread(int sec)
     //time_t end = time(NULL) + sec;
     while(running->remaining_ticks)
     {
-      //do something
+
     }
     mythread_exit();
 }
@@ -144,7 +144,7 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   
   
 
-  printf("thread %i has been inserted to queue\n", i);
+  printf("*** THREAD %i READY\n", i);
 
   return i;
 } 
@@ -165,13 +165,12 @@ void disk_interrupt(int sig)
 
 
 /* Free terminated thread and exits */
-void mythread_exit() {
-
-  printf("*** THREAD %d FINISHED\n", mythread_gettid());	
-  if(running->state != IDLE){
-    running->state = FREE;
-  }
+void mythread_exit() {	
+  printf("*** THREAD %d FINISHED\n", running->tid);	
+  
+  running->state = FREE;
   free(running->run_env.uc_stack.ss_sp); 
+
   TCB* next = scheduler();
   activator(next);
 }
@@ -187,7 +186,7 @@ void mythread_timeout() {
     disable_interrupt();
     enqueue(init_queue, running);
     enable_interrupt();
-    free(running->run_env.uc_stack.ss_sp);
+    //free(running->run_env.uc_stack.ss_sp); ??? we shouldnt free until we finish the thread?
     
     TCB* next = scheduler();
     activator(next);
@@ -227,7 +226,7 @@ TCB* scheduler()
   TCB* next = dequeue(init_queue);
   enable_interrupt();
   if(next == NULL){
-    printf("mythread_free: No thread in the system\nExiting...\n");	
+    printf("*** FINISH\n");	
     exit(1);
   }
   return next;
@@ -237,18 +236,10 @@ TCB* scheduler()
 /* Timer interrupt */
 void timer_interrupt(int sig)
 {
+  running->remaining_ticks--;
   running->ticks--;
-  //printf("remaining ticks: %i\n", running->ticks);
-  //printf("running state: %i\nrunning tid: %i\n", running->state, running->tid);
   if(running->ticks == 0){
-    running->state = INIT;
-    running->ticks = QUANTUM_TICKS;
-    disable_interrupt();
-    enqueue(init_queue, running);
-    enable_interrupt();
-    TCB* old_running = running;
-    TCB* next = scheduler();
-    activator(next);
+    mythread_timeout();
   }
 } 
 
@@ -261,9 +252,10 @@ void activator(TCB* next)
   if(prev->state == FREE){//activator was called because prev thread had finished executing
     printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
     setcontext (&(next->run_env));    
+    printf("mythread_free: After setcontext, should never get here!!...\n");
   }else{//activator was called because prev thread runned out of time
     printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
     swapcontext(&(prev->run_env),&(next->run_env));
   }
-  printf("mythread_free: After setcontext, should never get here!!...\n");	
+  	
 }

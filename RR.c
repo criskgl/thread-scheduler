@@ -235,9 +235,9 @@ void timer_interrupt(int sig)
     enqueue(init_queue, running);
     enable_interrupt();
     //free(running->run_env.uc_stack.ss_sp); ??? we shouldnt free until we finish the thread?
-    TCB* deleteme = running;
+
     TCB* next = scheduler();
-    activator(next);
+    if(next != running) activator(next); // the if is performed to avoid swaping context with same process
   }
 } 
 

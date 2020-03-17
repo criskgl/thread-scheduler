@@ -51,7 +51,7 @@ void function_thread(int sec)
 void init_mythreadlib() 
 {
   int i;
-  init_queue = queue_new();//RR queue
+  init_queue = queue_new();
 
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1)
@@ -178,6 +178,18 @@ void mythread_exit() {
 
 void mythread_timeout() {
     printf("*** THREAD %d EJECTED\n", mythread_gettid());
+
+    // Update TCB with new state and ticks
+    running->ticks = QUANTUM_TICKS;
+    running->state = INIT;
+    // Enqueue old running thread to wait for next execution
+    disable_interrupt();
+    enqueue(init_queue, running);
+    enable_interrupt();
+    //free(running->run_env.uc_stack.ss_sp); ??? we shouldnt free until we finish the thread?
+    
+    TCB* next = scheduler();
+    activator(next);
 }
 
 
@@ -227,17 +239,7 @@ void timer_interrupt(int sig)
   running->remaining_ticks--;
   running->ticks--;
   if(running->ticks == 0){
-    // Update TCB with new state and ticks
-    running->ticks = QUANTUM_TICKS;
-    running->state = INIT;
-    // Enqueue old running thread to wait for next execution
-    disable_interrupt();
-    enqueue(init_queue, running);
-    enable_interrupt();
-    //free(running->run_env.uc_stack.ss_sp); ??? we shouldnt free until we finish the thread?
-    TCB* deleteme = running;
-    TCB* next = scheduler();
-    activator(next);
+    mythread_timeout();
   }
 } 
 

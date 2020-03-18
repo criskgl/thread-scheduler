@@ -8,7 +8,6 @@
 
 //#include "mythread.h"
 #include "interrupt.h"
-
 #include "queue.h"
 
 TCB* scheduler();
@@ -16,7 +15,6 @@ void activator();
 void timer_interrupt(int sig);
 void disk_interrupt(int sig);
 struct queue *init_queue;
-
 
 /* Array of state thread control blocks: the process allows a maximum of N threads */
 static TCB t_state[N]; 
@@ -46,6 +44,14 @@ void function_thread(int sec)
     mythread_exit();
 }
 
+void function_thread_eject(int sec)
+{
+  while(running->remaining_ticks + 100)
+  {
+
+  }
+  mythread_exit();
+}
 
 /* Initialize the thread library */
 void init_mythreadlib() 
@@ -99,7 +105,6 @@ void init_mythreadlib()
   init_interrupt();
 }
 
-
 /* Create and intialize a new thread with body fun_addr and one integer argument */ 
 int mythread_create (void (*fun_addr)(),int priority,int seconds)
 {
@@ -141,15 +146,12 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   disable_interrupt();
   enqueue(init_queue, &t_state[i]);
   enable_interrupt();
-  
-  
 
   printf("*** THREAD %i READY\n", i);
 
   return i;
 } 
 /****** End my_thread_create() ******/
-
 
 /* Read disk syscall */
 int read_disk()
@@ -163,7 +165,6 @@ void disk_interrupt(int sig)
 
 }
 
-
 /* Free terminated thread and exits */
 void mythread_exit() {	
   printf("*** THREAD %d FINISHED\n", running->tid);	
@@ -175,9 +176,12 @@ void mythread_exit() {
   activator(next);
 }
 
-
 void mythread_timeout() {
     printf("*** THREAD %d EJECTED\n", mythread_gettid());
+    TCB* next = scheduler();
+    running->state = FREE;
+    // Only if there are threads waiting in the queue
+    if(next != running) activator(next);
 }
 
 
@@ -198,16 +202,13 @@ int mythread_getpriority(int priority)
   return t_state[tid].priority;
 }
 
-
 /* Get the current thread id.  */
 int mythread_gettid(){
   if (!init) { init_mythreadlib(); init=1;}
   return current;
 }
 
-
 /* Round Robin */
-
 TCB* scheduler()
 {
   disable_interrupt();
@@ -220,12 +221,12 @@ TCB* scheduler()
   return next;
 }
 
-
 /* Timer interrupt */
 void timer_interrupt(int sig)
 {
   running->remaining_ticks--;
   running->ticks--;
+  if(running->remaining_ticks < 0) mythread_timeout();
   if(running->ticks == 0){
     // Update TCB with new state and ticks
     running->ticks = QUANTUM_TICKS;
@@ -234,10 +235,10 @@ void timer_interrupt(int sig)
     disable_interrupt();
     enqueue(init_queue, running);
     enable_interrupt();
-    //free(running->run_env.uc_stack.ss_sp); ??? we shouldnt free until we finish the thread?
 
     TCB* next = scheduler();
-    if(next != running) activator(next); // the if is performed to avoid swaping context with same process
+    // Only if there are threads waiting in the queue
+    if(next != running) activator(next); 
   }
 } 
 
@@ -254,6 +255,5 @@ void activator(TCB* next)
   }else{//activator was called because prev thread runned out of time
     printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
     swapcontext(&(prev->run_env),&(next->run_env));
-  }
-  	
+  }	
 }

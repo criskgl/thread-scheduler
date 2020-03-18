@@ -10,45 +10,24 @@
 
 //Each thread executes this function
 extern void function_thread(int sec);
-
+extern void function_thread_eject(int sec);
 
 
 int main(int argc, char *argv[])
 {
-  int j,k,l,m,a,b,f;
-
+  int j,k,a,b;
 
   mythread_setpriority(LOW_PRIORITY);
-  if((f = mythread_create(function_thread,HIGH_PRIORITY, 1)) == -1){
+  if((j = mythread_create(function_thread_eject,HIGH_PRIORITY, 1)) == -1){
       printf("thread failed to initialize\n");
       exit(-1);
   }
-  
-  read_disk();
-  read_disk();
 
-  if((j = mythread_create(function_thread,HIGH_PRIORITY, 1)) == -1){
-    printf("thread failed to initialize\n");
-    exit(-1);
-  }
-   
   if((k = mythread_create(function_thread,HIGH_PRIORITY, 1)) == -1){
     printf("thread failed to initialize\n");
     exit(-1);
   }
-   
-  if((l = mythread_create(function_thread,LOW_PRIORITY, 1)) == -1){
-    printf("thread failed to initialize\n");
-    exit(-1);
-  }
 
-  if((m = mythread_create(function_thread,HIGH_PRIORITY, 10)) == -1){
-    printf("thread failed to initialize\n");
-    exit(-1);
-  }
-  read_disk();
-      
-  
   for (a=0; a<10; ++a) {
     for (b=0; b<30000000; ++b);
   }

@@ -8,7 +8,7 @@
             "name": "(gdb) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/main_rr",
+            "program": "${workspaceFolder}/main_rrs",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",

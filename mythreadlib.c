@@ -167,6 +167,10 @@ void mythread_exit() {
 
 
 void mythread_timeout(int tid) {
+  /*
+    running is high
+    running remaining ticks 0 , hasnt finished executing
+  */
 
     printf("*** THREAD %d EJECTED\n", tid);
     t_state[tid].state = FREE;

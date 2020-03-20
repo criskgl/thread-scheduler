@@ -9,13 +9,13 @@ LDFLAGS	= libinterrupt.a
 HEADERS = mythread.h queue.h my_io.h
 
 
-OBJS	= RRS.o queue.o my_io.o
+OBJS	= RR.o queue.o my_io.o
 
 LIBS	= -lm -lrt
 
 SRCS	= $(patsubst %.o,%.c,$(OBJS))
 
-PRGS	= main_rrs
+PRGS	= main_rr
 
 all: libinterrupt.a $(PRGS)
 

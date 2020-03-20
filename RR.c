@@ -230,7 +230,9 @@ void timer_interrupt(int sig)
 {
   running->remaining_ticks--;
   running->ticks--;
-  if(running->remaining_ticks < 0) mythread_timeout();
+  /*if(running->priority == HIGH_PRIORITY && running->remaining_ticks < 0){
+    mythread_timeout(running->tid);
+  } */
   if(running->ticks == 0){
     // Update TCB with new state and ticks
     running->ticks = QUANTUM_TICKS;

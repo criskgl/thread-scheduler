@@ -166,22 +166,26 @@ void disk_interrupt(int sig)
 }
 
 /* Free terminated thread and exits */
-void mythread_exit() {	
-  printf("*** THREAD %d FINISHED\n", running->tid);	
-  
-  running->state = FREE;
-  free(running->run_env.uc_stack.ss_sp); 
+void mythread_exit() {
+  int tid = mythread_gettid();	
+
+  printf("*** THREAD %d FINISHED\n", tid);	
+  t_state[tid].state = FREE;
+  free(t_state[tid].run_env.uc_stack.ss_sp); 
 
   TCB* next = scheduler();
   activator(next);
 }
 
-void mythread_timeout() {
-    printf("*** THREAD %d EJECTED\n", mythread_gettid());
+
+void mythread_timeout(int tid) {
+
+    printf("*** THREAD %d EJECTED\n", tid);
+    t_state[tid].state = FREE;
+    free(t_state[tid].run_env.uc_stack.ss_sp);
+
     TCB* next = scheduler();
-    running->state = FREE;
-    // Only if there are threads waiting in the queue
-    if(next != running) activator(next);
+    activator(next);
 }
 
 
@@ -237,23 +241,27 @@ void timer_interrupt(int sig)
     enable_interrupt();
 
     TCB* next = scheduler();
-    // Only if there are threads waiting in the queue
-    if(next != running) activator(next); 
+    activator(next); 
   }
 } 
 
 /* Activator */
 void activator(TCB* next)
 {
-  TCB* prev = running;
-  current = next->tid;
-  running = next;
-  if(prev->state == FREE){//activator was called because prev thread had finished executing
-    printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
-    setcontext (&(next->run_env));    
-    printf("mythread_free: After setcontext, should never get here!!...\n");
-  }else{//activator was called because prev thread runned out of time
-    printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
-    swapcontext(&(prev->run_env),&(next->run_env));
-  }	
+  //Do not swap same context 
+  if(running != next){ 
+    TCB* prev = running;
+    current = next->tid;
+    running = next;
+    if(prev->state == FREE){
+      //activator was called because prev thread had finished executing
+      printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
+      setcontext (&(next->run_env));    
+      printf("mythread_free: After setcontext, should never get here!!...\n");
+    }else{
+      //activator was called because prev thread runned out of time
+      printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
+      swapcontext(&(prev->run_env),&(next->run_env));
+    }	
+  }
 }

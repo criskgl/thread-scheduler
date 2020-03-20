@@ -44,7 +44,7 @@ void function_thread(int sec)
     mythread_exit();
 }
 
-void function_thread_eject(int sec)
+void function_thread_eject(int sec)//solo para los de alta prioridad. un low priority no hace ejected
 {
   while(running->remaining_ticks + 100)
   {

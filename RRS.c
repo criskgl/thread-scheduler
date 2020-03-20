@@ -239,6 +239,9 @@ void timer_interrupt(int sig)
 {
   running->remaining_ticks--;
   running->ticks--;
+  
+  //printf("\ttid:%i\n", running->tid);
+  //printf("\tremaining_ticks:%i\n", running->remaining_ticks);
   if(running->remaining_ticks < 0) mythread_timeout();
   //running is HIGH_PRIORITY
   if(running->priority == HIGH_PRIORITY){
@@ -260,9 +263,11 @@ void timer_interrupt(int sig)
         enable_interrupt();      
       }
     }else{//next is LOW_PRIORITY (No high priority remaining)
+      queue_print(rr_queue);
+      queue_print(sjf_queue);
       //put back in queue previously retrieved process from scheduler
       disable_interrupt();
-      enqueue(rr_queue, running);
+      enqueue(rr_queue, next);//WARNING!!! MUST INSERT AT BEGINING OF QUEUE!!!
       enable_interrupt();
     }
   }else{//running is LOW_PRIORITY
@@ -275,7 +280,7 @@ void timer_interrupt(int sig)
           running->state = INIT;
           // Enqueue old running thread to wait for next execution
           disable_interrupt();
-          enqueue(rr_queue, running);
+          enqueue(rr_queue, running);//WARNING!! INSERT FRONT OR END?
           enable_interrupt();
 
           TCB* next = scheduler();

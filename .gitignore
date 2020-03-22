@@ -1,3 +1,5 @@
 *.o
 *.a
-main*
+main
+main_rr
+main_rrsd

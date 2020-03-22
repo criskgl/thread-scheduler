@@ -16,6 +16,7 @@ void timer_interrupt(int sig);
 void disk_interrupt(int sig);
 struct queue *rr_queue;
 struct queue *sjf_queue;
+struct queue *waiting_queue;
 
 /* Array of state thread control blocks: the process allows a maximum of N threads */
 static TCB t_state[N]; 
@@ -45,9 +46,25 @@ void function_thread(int sec)
     mythread_exit();
 }
 
-void function_thread_eject(int sec)//solo para los de alta prioridad. un low priority no hace ejected
+// High priority threads that take longer than remaining_ticks
+void function_thread_eject(int sec)
 {
   while(running->remaining_ticks + 100)
+  {
+
+  }
+  mythread_exit();
+}
+
+// Threads that need to read from disk
+void function_thread_disk(int sec)
+{
+  read_disk();
+  read_disk();
+  read_disk();
+  read_disk();
+  read_disk();
+  while(running->remaining_ticks)
   {
 
   }
@@ -60,6 +77,7 @@ void init_mythreadlib()
   int i;
   rr_queue = queue_new();//RR queue for LOW_PRIORITY
   sjf_queue = queue_new();//SJF queue for HIGH_PRIORITY
+  waiting_queue = queue_new();//Queue for WAITING threads
 
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1)
@@ -181,13 +199,43 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
 /* Read disk syscall */
 int read_disk()
 {
-   return 1;
+  printf("*** THREAD %d READ FROM DISK\n", running->tid);
+  // Data is not in cache
+  if(!data_in_page_cache()){
+    running->state = WAITING;
+
+    disable_interrupt();
+    enqueue(waiting_queue, running);
+    enable_interrupt();
+
+    TCB* next = scheduler();
+    activator(next);
+  }
+  return 1;
 }
 
 /* Disk interrupt  */
 void disk_interrupt(int sig)
 {
-  printf("DISCO\n");	
+  //Check if there are waiting threads
+  if(!queue_empty(waiting_queue)){
+    printf("DISK INTERRUPT");
+    disable_interrupt();
+    TCB* waiting_to_ready = dequeue(waiting_queue);
+    enable_interrupt();
+
+    waiting_to_ready->state = INIT;
+
+    if(waiting_to_ready->priority == HIGH_PRIORITY){
+      disable_interrupt();
+      sorted_enqueue(sjf_queue, waiting_to_ready, waiting_to_ready->remaining_ticks);
+      enable_interrupt();
+    }else{
+      disable_interrupt();
+      enqueue(rr_queue, waiting_to_ready);
+      enable_interrupt();
+    }
+  }
 }
 
 /* Free terminated thread and exits */
@@ -245,10 +293,12 @@ TCB* scheduler()
     disable_interrupt();
     next = dequeue(sjf_queue);
     enable_interrupt();
-  }else{
+  }else if(!queue_empty(rr_queue)){
     disable_interrupt();
     next = dequeue(rr_queue);
     enable_interrupt();
+  }else if(!queue_empty(waiting_queue)){
+    return &idle;
   }
   if(next == NULL){
     printf("*** FINISH\n");	
@@ -294,7 +344,7 @@ void activator(TCB* next)
       setcontext (&(next->run_env));    
       printf("mythread_free: After setcontext, should never get here!!...\n");
     }else{
-      //activator was called because prev thread runned out of time
+      //activator was called because prev thread ran out of time OR is waiting for disk
       printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
       swapcontext(&(prev->run_env),&(next->run_env));
     }	

@@ -219,7 +219,6 @@ void disk_interrupt(int sig)
 {
   //Check if there are waiting threads
   if(!queue_empty(waiting_queue)){
-    printf("DISK INTERRUPT");
     disable_interrupt();
     TCB* waiting_to_ready = dequeue(waiting_queue);
     enable_interrupt();
@@ -310,6 +309,14 @@ TCB* scheduler()
 /* Timer interrupt */
 void timer_interrupt(int sig)
 {
+  //Beg  For IDLE THREAD only
+  if(running->tid == -1){//if idle
+    if(!queue_empty(rr_queue) || !queue_empty(sjf_queue)){//if there is any process ready...
+      activator(scheduler());
+    }
+  }
+  //End For IDLE THREAD only
+
   running->remaining_ticks--;
   running->ticks--;
   if(running->priority == HIGH_PRIORITY && running->remaining_ticks < 0){

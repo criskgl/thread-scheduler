@@ -199,11 +199,11 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
 /* Read disk syscall */
 int read_disk()
 {
-  printf("*** THREAD %d READ FROM DISK\n", running->tid);
-  // Data is not in cache
+  /*Data is not in cache, there is gonna be a context change 
+  with either other process that is ready or the idle thread*/
   if(!data_in_page_cache()){
     running->state = WAITING;
-
+    printf("*** THREAD %d READ FROM DISK\n", running->tid);
     disable_interrupt();
     enqueue(waiting_queue, running);
     enable_interrupt();
@@ -211,6 +211,8 @@ int read_disk()
     TCB* next = scheduler();
     activator(next);
   }
+
+  //Data is in cache, do nothing.
   return 1;
 }
 
@@ -220,7 +222,7 @@ void disk_interrupt(int sig)
   //Check if there are waiting threads
   if(!queue_empty(waiting_queue)){
     disable_interrupt();
-    TCB* waiting_to_ready = dequeue(waiting_queue);
+    TCB* waiting_to_ready = dequeue(waiting_queue);//process that has information from disk ready
     enable_interrupt();
 
     waiting_to_ready->state = INIT;

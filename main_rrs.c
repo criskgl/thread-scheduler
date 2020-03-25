@@ -17,18 +17,17 @@ int main(int argc, char *argv[])
 {
   int j,k,l,a,b;
 
-  mythread_setpriority(HIGH_PRIORITY);
-  if((j = mythread_create(function_thread,LOW_PRIORITY, 10)) == -1){
+  mythread_setpriority(LOW_PRIORITY);
+  if((j = mythread_create(function_thread,HIGH_PRIORITY, 1)) == -1){
       printf("thread failed to initialize\n");
       exit(-1);
   }
 
-/*
   if((k = mythread_create(function_thread,HIGH_PRIORITY, 0.5f)) == -1){
     printf("thread failed to initialize\n");
     exit(-1);
   }
-
+/*
   if((l = mythread_create(function_thread,HIGH_PRIORITY, 0.5f)) == -1){
     printf("thread failed to initialize\n");
     exit(-1);

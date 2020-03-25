@@ -159,6 +159,9 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
 
   if(running->priority == LOW_PRIORITY && priority == HIGH_PRIORITY){
     printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i\n", running->tid, i);
+    disable_interrupt();
+    enqueue(rr_queue, running);
+    enable_interrupt();
     TCB* next = scheduler();
     activator(next);
   }
@@ -187,7 +190,7 @@ int read_disk()
 /* Disk interrupt  */
 void disk_interrupt(int sig)
 {
-  printf("DISCO\n");	
+
 }
 
 /* Free terminated thread and exits */
@@ -204,13 +207,12 @@ void mythread_exit() {
 
 
 void mythread_timeout(int tid) {
+  printf("*** THREAD %d EJECTED\n", tid);
+  t_state[tid].state = FREE;
+  free(t_state[tid].run_env.uc_stack.ss_sp);
 
-    printf("*** THREAD %d EJECTED\n", tid);
-    t_state[tid].state = FREE;
-    free(t_state[tid].run_env.uc_stack.ss_sp);
-
-    TCB* next = scheduler();
-    activator(next);
+  TCB* next = scheduler();
+  activator(next);
 }
 
 

@@ -23,6 +23,16 @@ int main(int argc, char *argv[])
       exit(-1);
   }
 
+  if((k = mythread_create(function_thread_disk,LOW_PRIORITY, 1)) == -1){
+      printf("thread failed to initialize\n");
+      exit(-1);
+  }
+
+  if((l = mythread_create(function_thread_disk,LOW_PRIORITY, 1)) == -1){
+    printf("thread failed to initialize\n");
+    exit(-1);
+  }
+
   read_disk();
   
   for (a=0; a<10; ++a) {

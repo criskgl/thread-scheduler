@@ -15,7 +15,7 @@ LIBS	= -lm -lrt
 
 SRCS	= $(patsubst %.o,%.c,$(OBJS))
 
-PRGS	= main_rrs
+PRGS	= main
 
 all: libinterrupt.a $(PRGS)
 

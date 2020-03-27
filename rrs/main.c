@@ -27,11 +27,11 @@ int main(int argc, char *argv[])
     printf("thread failed to initialize\n");
     exit(-1);
   }
-/*
+
   if((l = mythread_create(function_thread,HIGH_PRIORITY, 0.5f)) == -1){
     printf("thread failed to initialize\n");
     exit(-1);
-  }*/
+  }
 
   for (a=0; a<10; ++a) {
     for (b=0; b<30000000; ++b);

@@ -37,7 +37,7 @@ static void idle_function()
 
 void function_thread(int sec)
 {
-    //time_t end = time(NULL) + sec;
+    /* time_t end = time(NULL) + sec; */
     while(running->remaining_ticks)
     {
 
@@ -45,8 +45,10 @@ void function_thread(int sec)
     mythread_exit();
 }
 
+/* For HIGH_PRIORITY only: Forces thread to eject */
 void function_thread_eject(int sec)
 {
+  /* Thread runs out of remaining_ticks */
   while(running->remaining_ticks + 100)
   {
 
@@ -58,8 +60,11 @@ void function_thread_eject(int sec)
 void init_mythreadlib() 
 {
   int i;
-  rr_queue = queue_new();//RR queue LOW_PRIORITY
-  sjf_queue = queue_new();//SJF queue HIGH_PRIORITY
+  /* Round Robin queue */
+  rr_queue = queue_new();
+  /* Shortest Job First queue */
+  sjf_queue = queue_new();
+
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1)
   {
@@ -112,8 +117,9 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   int i;
   
   if (!init) { init_mythreadlib(); init=1;}
-
-  for (i=0; i<N; i++)//search for next free thread
+  
+  /* Finds first FREE thread available */
+  for (i=0; i<N; i++)
     if (t_state[i].state == FREE) break;
 
   if (i == N) return(-1);
@@ -143,51 +149,77 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr,2,seconds);
 
-  //Enqueue thread in the corresponding queue depending on priority
+  /* Every new thread is enqueued in its corresponding queue */
   if(priority == LOW_PRIORITY){
     disable_interrupt();
     enqueue(rr_queue, &t_state[i]);
     enable_interrupt();
-  }
-  else{
+  }else{
     disable_interrupt();
     sorted_enqueue(sjf_queue, &t_state[i], t_state[i].remaining_ticks);
     enable_interrupt();
   }
+
   printf("*** THREAD %i READY\n", i);
+
+  /* Checks if new thread is higher priority that running thread */
+  if(running->priority == LOW_PRIORITY && priority == HIGH_PRIORITY){
+    printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i\n", running->tid, i);
+    disable_interrupt();
+    enqueue(rr_queue, running);
+    enable_interrupt();
+    TCB* next = scheduler();
+    activator(next);
+  }
+  
+  /* Checks if new thread is shorter than running thread (for HIGH_PRIORITY threads only) */
+  if(running->priority == HIGH_PRIORITY && priority == HIGH_PRIORITY){
+    if(running->remaining_ticks > t_state[i].remaining_ticks){
+      disable_interrupt();
+      sorted_enqueue(sjf_queue, running, running->remaining_ticks);
+      enable_interrupt();
+    
+      TCB* next = scheduler();
+      activator(next);
+    }
+  }
+
   return i;
 } 
 /****** End my_thread_create() ******/
 
-/* Read disk syscall */
+/* Read disk syscall (Not used) */
 int read_disk()
 {
    return 1;
 }
 
-/* Disk interrupt  */
+/* Disk interrupt  (Not used) */
 void disk_interrupt(int sig)
 {
 
 }
 
 /* Free terminated thread and exits */
-void mythread_exit() {	
-  printf("*** THREAD %d FINISHED\n", running->tid);	
-  
-  running->state = FREE;
-  free(running->run_env.uc_stack.ss_sp); 
+void mythread_exit() {
+  int tid = mythread_gettid();	
+
+  printf("*** THREAD %d FINISHED\n", tid);	
+  t_state[tid].state = FREE;
+  free(t_state[tid].run_env.uc_stack.ss_sp); 
 
   TCB* next = scheduler();
   activator(next);
 }
 
-void mythread_timeout() {
-    printf("*** THREAD %d EJECTED\n", mythread_gettid());
-    TCB* next = scheduler();
-    running->state = FREE;
-    // Only if there are threads waiting in the queue
-    if(next != running) activator(next);
+/* HIGH_PRIORITY thread thread runs out of remaining_ticks (not used) */
+void mythread_timeout(int tid) {
+  printf("*** THREAD %d EJECTED\n", tid);
+  t_state[tid].state = FREE;
+  free(t_state[tid].run_env.uc_stack.ss_sp);
+
+  TCB* next = scheduler();
+  activator(next);
 }
 
 
@@ -208,17 +240,17 @@ int mythread_getpriority(int priority)
   return t_state[tid].priority;
 }
 
-/* Get the current thread id.  */
+/* Get the current thread id. */
 int mythread_gettid(){
   if (!init) { init_mythreadlib(); init=1;}
   return current;
 }
 
-/* Round Robin */
+/* Round Robin + SJF */
 TCB* scheduler()
 {
   TCB* next;
-  if(!queue_empty(sjf_queue)){//HIGH_PRIORITY ready?
+  if(!queue_empty(sjf_queue)){
     disable_interrupt();
     next = dequeue(sjf_queue);
     enable_interrupt();
@@ -240,83 +272,41 @@ void timer_interrupt(int sig)
   running->remaining_ticks--;
   running->ticks--;
   
-  //printf("\ttid:%i\n", running->tid);
-  //printf("\tremaining_ticks:%i\n", running->remaining_ticks);
-  if(running->remaining_ticks < 0) mythread_timeout();
-  //running is HIGH_PRIORITY
-  if(running->priority == HIGH_PRIORITY){
-    //Apply SJF
+  /* Checks if a HIGH_PRIORITY thread ran out of remaining_ticks */
+  if(running->priority == HIGH_PRIORITY && running->remaining_ticks < 0){
+    mythread_timeout(running->tid);
+  }
+  if(running->priority == LOW_PRIORITY && running->ticks == 0){
+    /* Updates TCB with new state and quantum_ticks */
+    running->ticks = QUANTUM_TICKS;
     running->state = INIT;
+    /* Enqueues previous running thread to wait for next execution */
+    disable_interrupt();
+    enqueue(rr_queue, running);
+    enable_interrupt();
+
     TCB* next = scheduler();
-    if(next->priority == HIGH_PRIORITY){
-      if(next->remaining_ticks < running->remaining_ticks){//less strict
-        //Enqueue old running thread to wait for next execution becuase high priority is ready
-        disable_interrupt();
-        sorted_enqueue(sjf_queue, running, running->remaining_ticks);
-        enable_interrupt();
-        //Only if tnext is different to running
-        if(next != running) activator(next); 
-      }else if(next->remaining_ticks >= running->remaining_ticks){
-        //put back in queue previously retrieved process from scheduler
-        disable_interrupt();
-        sorted_enqueue(sjf_queue, next, next->remaining_ticks);
-        enable_interrupt();      
-      }
-    }else{//next is LOW_PRIORITY (No high priority remaining)
-      queue_print(rr_queue);
-      queue_print(sjf_queue);
-      //put back in queue previously retrieved process from scheduler
-      disable_interrupt();
-      enqueue(rr_queue, next);//WARNING!!! MUST INSERT AT BEGINING OF QUEUE!!!
-      enable_interrupt();
-    }
-  }else{//running is LOW_PRIORITY
-    //check if any HIGH_PRIORITY ready
-    if(queue_empty(sjf_queue)){
-      //no HIGH_PRIORITY ready
-      if(running->ticks == 0){
-          // Update TCB with new state and ticks
-          running->ticks = QUANTUM_TICKS;
-          running->state = INIT;
-          // Enqueue old running thread to wait for next execution
-          disable_interrupt();
-          enqueue(rr_queue, running);//WARNING!! INSERT FRONT OR END?
-          enable_interrupt();
-
-          TCB* next = scheduler();
-          // Only if there are threads waiting in the queue
-          if(next != running) activator(next); 
-        }
-    }else{
-      //There is HIGH_PRIORITY read
-      running->ticks = QUANTUM_TICKS;
-      running->state = INIT;
-      //Enqueue old running thread to wait for next execution becuase high priority is ready
-      disable_interrupt();
-      enqueue(rr_queue, running);
-      enable_interrupt();
-      TCB* next = scheduler();
-      
-      printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i", running->tid, next->tid);
-
-      // Only if there are threads waiting in the queue
-      if(next != running) activator(next); 
-    }
+    activator(next); 
   }
 } 
 
 /* Activator */
 void activator(TCB* next)
 {
-  TCB* prev = running;
-  current = next->tid;
-  running = next;
-  if(prev->state == FREE){//activator was called because prev thread had finished executing
-    printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
-    setcontext (&(next->run_env));    
-    printf("mythread_free: After setcontext, should never get here!!...\n");
-  }else{//activator was called because prev thread runned out of time
-    printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
-    swapcontext(&(prev->run_env),&(next->run_env));
-  }	
+  /* Error check: Do not swap context for the same thread */
+  if(running != next){ 
+    TCB* prev = running;
+    current = next->tid;
+    running = next;
+    if(prev->state == FREE){
+      /* Activator was called because previous thread had finished executing */
+      printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
+      setcontext (&(next->run_env));    
+      printf("mythread_free: After setcontext, should never get here!!...\n");
+    }else{
+      /* Activator was called because previous thread ran out of ticks */
+      printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
+      swapcontext(&(prev->run_env),&(next->run_env));
+    }	
+  }
 }

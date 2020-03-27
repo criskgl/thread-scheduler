@@ -14,9 +14,7 @@ TCB* scheduler();
 void activator();
 void timer_interrupt(int sig);
 void disk_interrupt(int sig);
-struct queue *rr_queue;
-struct queue *sjf_queue;
-struct queue *waiting_queue;
+struct queue *init_queue;
 
 /* Array of state thread control blocks: the process allows a maximum of N threads */
 static TCB t_state[N]; 
@@ -38,33 +36,19 @@ static void idle_function()
 
 void function_thread(int sec)
 {
-    //time_t end = time(NULL) + sec;
-    while(running->remaining_ticks)
-    {
-
-    }
-    mythread_exit();
-}
-
-// High priority threads that take longer than remaining_ticks
-void function_thread_eject(int sec)
-{
-  while(running->remaining_ticks + 100)
+  /* time_t end = time(NULL) + sec; */
+  while(running->remaining_ticks)
   {
 
   }
   mythread_exit();
 }
 
-// Threads that need to read from disk
-void function_thread_disk(int sec)
+/* For HIGH_PRIORITY only: Forces thread to eject */
+void function_thread_eject(int sec)//
 {
-  read_disk();
-  read_disk();
-  read_disk();
-  read_disk();
-  read_disk();
-  while(running->remaining_ticks)
+  /* Thread runs out of remaining_ticks */
+  while(running->remaining_ticks + 100)
   {
 
   }
@@ -75,9 +59,9 @@ void function_thread_disk(int sec)
 void init_mythreadlib() 
 {
   int i;
-  rr_queue = queue_new();//RR queue for LOW_PRIORITY
-  sjf_queue = queue_new();//SJF queue for HIGH_PRIORITY
-  waiting_queue = queue_new();//Queue for WAITING threads
+
+  /* Round Robin queue */
+  init_queue = queue_new();
 
   /* Create context for the idle thread */
   if(getcontext(&idle.run_env) == -1)
@@ -120,6 +104,7 @@ void init_mythreadlib()
 
   t_state[0].tid = 0;
   running = &t_state[0];
+
   /* Initialize disk and clock interrupts */
   init_disk_interrupt();
   init_interrupt();
@@ -132,7 +117,8 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   
   if (!init) { init_mythreadlib(); init=1;}
 
-  for (i=0; i<N; i++)//search for next free thread
+  /* Finds first FREE thread available */
+  for (i=0; i<N; i++)
     if (t_state[i].state == FREE) break;
 
   if (i == N) return(-1);
@@ -162,81 +148,27 @@ int mythread_create (void (*fun_addr)(),int priority,int seconds)
   t_state[i].run_env.uc_stack.ss_flags = 0;
   makecontext(&t_state[i].run_env, fun_addr,2,seconds);
 
-  //Enqueue thread in the corresponding queue depending on priority
-  if(priority == LOW_PRIORITY){
-    disable_interrupt();
-    enqueue(rr_queue, &t_state[i]);
-    enable_interrupt();
-  }else{
-    disable_interrupt();
-    sorted_enqueue(sjf_queue, &t_state[i], t_state[i].remaining_ticks);
-    enable_interrupt();
-  }
+  /* Every new thread is enqueued */
+  disable_interrupt();
+  enqueue(init_queue, &t_state[i]);
+  enable_interrupt();
 
   printf("*** THREAD %i READY\n", i);
-
-  if(running->priority == LOW_PRIORITY && priority == HIGH_PRIORITY){
-    printf("*** THREAD %i PREEMTED : SETCONTEXT OF %i\n", running->tid, i);
-    TCB* next = scheduler();
-    activator(next);
-  }
-  
-  if(running->priority == HIGH_PRIORITY && priority == HIGH_PRIORITY){
-    if(running->remaining_ticks > t_state[i].remaining_ticks){
-      disable_interrupt();
-      sorted_enqueue(sjf_queue, running, running->remaining_ticks);
-      enable_interrupt();
-    
-      TCB* next = scheduler();
-      activator(next);
-    }
-  }
 
   return i;
 } 
 /****** End my_thread_create() ******/
 
-/* Read disk syscall */
+/* Read disk syscall (Not used) */
 int read_disk()
 {
-  /*Data is not in cache, there is gonna be a context change 
-  with either other process that is ready or the idle thread*/
-  if(!data_in_page_cache()){
-    running->state = WAITING;
-    printf("*** THREAD %d READ FROM DISK\n", running->tid);
-    disable_interrupt();
-    enqueue(waiting_queue, running);
-    enable_interrupt();
-
-    TCB* next = scheduler();
-    activator(next);
-  }
-
-  //Data is in cache, do nothing.
-  return 1;
+   return 1;
 }
 
-/* Disk interrupt  */
+/* Disk interrupt (Not used) */
 void disk_interrupt(int sig)
 {
-  //Check if there are waiting threads
-  if(!queue_empty(waiting_queue)){
-    disable_interrupt();
-    TCB* waiting_to_ready = dequeue(waiting_queue);//process that has information from disk ready
-    enable_interrupt();
 
-    waiting_to_ready->state = INIT;
-
-    if(waiting_to_ready->priority == HIGH_PRIORITY){
-      disable_interrupt();
-      sorted_enqueue(sjf_queue, waiting_to_ready, waiting_to_ready->remaining_ticks);
-      enable_interrupt();
-    }else{
-      disable_interrupt();
-      enqueue(rr_queue, waiting_to_ready);
-      enable_interrupt();
-    }
-  }
 }
 
 /* Free terminated thread and exits */
@@ -251,7 +183,7 @@ void mythread_exit() {
   activator(next);
 }
 
-
+/* HIGH_PRIORITY thread thread runs out of remaining_ticks (not used) */
 void mythread_timeout(int tid) {
 
     printf("*** THREAD %d EJECTED\n", tid);
@@ -280,27 +212,18 @@ int mythread_getpriority(int priority)
   return t_state[tid].priority;
 }
 
-/* Get the current thread id.  */
+/* Get the current thread id. */
 int mythread_gettid(){
   if (!init) { init_mythreadlib(); init=1;}
   return current;
 }
 
-/* Round Robin - SJF */
+/* Round Robin */
 TCB* scheduler()
 {
-  TCB* next;
-  if(!queue_empty(sjf_queue)){
-    disable_interrupt();
-    next = dequeue(sjf_queue);
-    enable_interrupt();
-  }else if(!queue_empty(rr_queue)){
-    disable_interrupt();
-    next = dequeue(rr_queue);
-    enable_interrupt();
-  }else if(!queue_empty(waiting_queue)){
-    return &idle;
-  }
+  disable_interrupt();
+  TCB* next = dequeue(init_queue);
+  enable_interrupt();
   if(next == NULL){
     printf("*** FINISH\n");	
     exit(1);
@@ -311,27 +234,15 @@ TCB* scheduler()
 /* Timer interrupt */
 void timer_interrupt(int sig)
 {
-  //Beg  For IDLE THREAD only
-  if(running->tid == -1){//if idle
-    if(!queue_empty(rr_queue) || !queue_empty(sjf_queue)){//if there is any process ready...
-      activator(scheduler());
-    }
-  }
-  //End For IDLE THREAD only
-
   running->remaining_ticks--;
   running->ticks--;
-  if(running->priority == HIGH_PRIORITY && running->remaining_ticks < 0){
-    //EJECT THREAD
-    mythread_timeout(running->tid);
-  }
-  if(running->priority == LOW_PRIORITY && running->ticks == 0){
-    // Update TCB with new state and ticks
+  if(running->ticks == 0){
+    /* Updates TCB with new state and quantum_ticks */
     running->ticks = QUANTUM_TICKS;
     running->state = INIT;
-    // Enqueue old running thread to wait for next execution
+    /* Enqueues previous running thread to wait for next execution */
     disable_interrupt();
-    enqueue(rr_queue, running);
+    enqueue(init_queue, running);
     enable_interrupt();
 
     TCB* next = scheduler();
@@ -342,18 +253,18 @@ void timer_interrupt(int sig)
 /* Activator */
 void activator(TCB* next)
 {
-  //Do not swap same context 
+  /* Error check: Do not swap context for the same thread */
   if(running != next){ 
     TCB* prev = running;
     current = next->tid;
     running = next;
     if(prev->state == FREE){
-      //activator was called because prev thread had finished executing
+      /* Activator was called because previous thread had finished executing */
       printf("*** THREAD %i TERMINATED: SETCONTEXT OF %i \n", prev->tid, next->tid);
       setcontext (&(next->run_env));    
       printf("mythread_free: After setcontext, should never get here!!...\n");
     }else{
-      //activator was called because prev thread ran out of time OR is waiting for disk
+      /* Activator was called because previous thread ran out of ticks */
       printf("*** SWAPCONTEXT FROM %i TO %i\n", prev->tid, next->tid);
       swapcontext(&(prev->run_env),&(next->run_env));
     }	
